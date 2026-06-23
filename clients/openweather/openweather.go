@@ -4,63 +4,68 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 type OpenWeatherClient struct {
 	apikey string
+	client *http.Client
 }
 
 func New(apikey string) *OpenWeatherClient {
 	return &OpenWeatherClient{
 		apikey: apikey,
+		client: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (o OpenWeatherClient) Coordinates(city string) (error, Coordinates) {
+func (o OpenWeatherClient) Coordinates(city string) (Coordinates, error) {
 	url := "http://api.openweathermap.org/geo/1.0/direct?q=%s&limit=5&appid=%s"
-	resp, err := http.Get(fmt.Sprintf(url, city, o.apikey))
+	resp, err := o.client.Get(fmt.Sprintf(url, city, o.apikey))
 	if err != nil {
-		return fmt.Errorf("error get coordinates: %w", err), Coordinates{}
+		return Coordinates{}, fmt.Errorf("error get coordinates: %w", err)
 	}
+	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("error fail get coordinates: %d", resp.StatusCode), Coordinates{}
+	if resp.StatusCode != http.StatusOK {
+		return Coordinates{}, fmt.Errorf("error fail get coordinates: %d", resp.StatusCode)
 	}
 
 	var coordinatesResponse []CoordinatesResponse
 	err = json.NewDecoder(resp.Body).Decode(&coordinatesResponse)
 	if err != nil {
-		return fmt.Errorf("error unmarshal: %w", err), Coordinates{}
+		return Coordinates{}, fmt.Errorf("error unmarshal: %w", err)
 	}
 
 	if len(coordinatesResponse) == 0 {
-		return fmt.Errorf("error empty coordinates: %w", err), Coordinates{}
+		return Coordinates{}, fmt.Errorf("empty coordinates response for city: %s", city)
 	}
 
-	return nil, Coordinates{
+	return Coordinates{
 		Lat: coordinatesResponse[0].Lat,
 		Lon: coordinatesResponse[0].Lon,
-	}
+	}, nil
 }
 
-func (o OpenWeatherClient) Weather(lat, lon float64) (error, Weather) {
+func (o OpenWeatherClient) Weather(lat, lon float64) (Weather, error) {
 	url := "https://api.openweathermap.org/data/2.5/weather?lat=%f&lon=%f&appid=%s&units=metric"
-	resp, err := http.Get(fmt.Sprintf(url, lat, lon, o.apikey))
+	resp, err := o.client.Get(fmt.Sprintf(url, lat, lon, o.apikey))
 	if err != nil {
-		return fmt.Errorf("error get weather: %w", err), Weather{}
+		return Weather{}, fmt.Errorf("error get weather: %w", err)
 	}
+	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("error fail get weather: %d", resp.StatusCode), Weather{}
+	if resp.StatusCode != http.StatusOK {
+		return Weather{}, fmt.Errorf("error fail get weather: %d", resp.StatusCode)
 	}
 
 	var weatherResponse WeatherResponse
 	err = json.NewDecoder(resp.Body).Decode(&weatherResponse)
 	if err != nil {
-		return fmt.Errorf("error unmarshal weather response %w", err), Weather{}
+		return Weather{}, fmt.Errorf("error unmarshal weather response %w", err)
 	}
 
-	return nil, Weather{
+	return Weather{
 		Temp: weatherResponse.Main.Temp,
-	}
+	}, nil
 }
